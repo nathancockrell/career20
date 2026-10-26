@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LifeSim – Host</title><link rel="stylesheet" href="style.css"></head>
+<body><div class="wrap">
+  <section id="lobby">
+    <p>Join at <b id="url"></b></p>
+    <div class="code" id="code">·····</div>
+    <div id="plist" style="margin:12px 0">Waiting for players…</div>
+    <button id="start" disabled>Start 20 years</button>
+  </section>
+  <section id="yr" class="hide">
+    <p id="yn"></p><h1 id="en" style="margin:8px 0"></h1><h2 id="et"></h2>
+    <div class="timer" id="timer" style="margin:12px 0"></div>
+    <p id="ac"></p>
+  </section>
+  <section id="rev" class="hide">
+    <h2 id="rt"></h2>
+    <ul class="board" id="rboard" style="margin:14px 0"></ul>
+    <button id="next">Next year</button>
+  </section>
+  <section id="fin" class="hide">
+    <h1>Final standings</h1><p>Score = money + 1,000 per happiness point</p>
+    <ul class="board" id="fboard" style="margin-top:14px"></ul>
+  </section>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const s = io(), $ = id => document.getElementById(id);
+const fmt = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US');
+const show = n => ['lobby','yr','rev','fin'].forEach(x => $(x).classList.toggle('hide', x !== n));
+const fill = (el, rows) => el.replaceChildren(...rows.map((r, i) => { const li = document.createElement('li');
+  const a = document.createElement('span'), b = document.createElement('span');
+  a.textContent = `${i + 1}. ${r.name}`; b.className = 'meta';
+  b.textContent = `${fmt(r.money)} · ${r.hap} happy · `; const t = document.createElement('b'); t.textContent = fmt(r.score);
+  b.append(t); li.append(a, b); return li; }));
+let tick;
+s.emit('host:create');
+s.on('created', c => { $('code').textContent = c; $('url').textContent = location.host; });
+s.on('players', names => {
+  $('plist').replaceChildren(...names.map(n => Object.assign(document.createElement('span'), { className: 'chip', textContent: n })));
+  if (!names.length) $('plist').textContent = 'Waiting for players…';
+  $('start').disabled = !names.length;
+});
+$('start').onclick = $('next').onclick = () => s.emit('host:next');
+s.on('year', y => {
+  show('yr'); $('yn').textContent = `Year ${y.year} of ${y.total} · Age ${y.age}`;
+  $('en').textContent = y.event.name; $('et').textContent = y.event.text; $('ac').textContent = 'Players are planning…';
+  let left = y.time; $('timer').textContent = left; clearInterval(tick);
+  tick = setInterval(() => { left = Math.max(0, left - 1); $('timer').textContent = left; }, 1000);
+});
+s.on('count', ({ n, total }) => $('ac').textContent = `${n} of ${total} ready`);
+s.on('reveal', r => {
+  clearInterval(tick); show('rev'); $('rt').textContent = `Year ${r.year} leaderboard`;
+  fill($('rboard'), r.board); $('next').textContent = r.last ? 'Show final standings' : 'Next year';
+});
+s.on('final', b => { clearInterval(tick); show('fin'); fill($('fboard'), b.slice(0, 10)); });
+</script></body></html>

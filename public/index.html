@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LifeSim</title><link rel="stylesheet" href="style.css"></head>
+<body><div class="wrap">
+  <section id="join">
+    <h1>LifeSim</h1>
+    <input id="code" placeholder="Game code" maxlength="5" autocapitalize="characters" autocomplete="off" style="margin:18px 0 12px">
+    <input id="name" placeholder="Nickname" maxlength="16" autocomplete="off" style="margin-bottom:12px">
+    <button id="go">Join game</button>
+    <p class="err" id="err" role="alert"></p>
+  </section>
+  <section id="wait" class="hide"><h2 id="hello"></h2><p id="wmsg">You're in. Your 20 years start when the host begins.</p></section>
+  <section id="pick" class="hide">
+    <p id="yn"></p>
+    <div class="banner"><b id="en"></b> <span id="et"></span></div>
+    <div class="grp" id="g-inc"></div><div class="grp" id="g-exp"></div><div class="grp" id="g-inv"></div>
+    <button id="submit" disabled style="margin:12px 0 24px">Lock in year</button>
+  </section>
+  <section id="lock" class="hide"><h2>Plan locked in</h2><p>Waiting for the others…</p></section>
+  <section id="rep" class="hide">
+    <h2 id="rtitle"></h2><div class="big" id="rbig"></div>
+    <div class="rows" id="rrows"></div><button id="rnext" style="margin-top:8px">Next</button>
+  </section>
+  <section id="fin" class="hide"><h1>Life complete</h1><p id="rank"></p><ul class="board" id="fb" style="margin-top:14px"></ul></section>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const s = io(), $ = id => document.getElementById(id);
+const fmt = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US');
+const show = n => ['join','wait','pick','lock','rep','fin'].forEach(x => $(x).classList.toggle('hide', x !== n));
+let me = '', sel = {}, steps = [], si = 0;
+$('code').value = (new URLSearchParams(location.search).get('c') || '').toUpperCase();
+const join = () => s.emit('join', { code: $('code').value, name: $('name').value });
+$('go').onclick = join;
+[$('code'), $('name')].forEach(el => el.addEventListener('keydown', e => e.key === 'Enter' && join()));
+s.on('join:error', m => $('err').textContent = m);
+s.on('joined', n => { me = n; $('hello').textContent = `Welcome, ${n}!`; show('wait'); });
+
+const GROUPS = [['inc', 'Income', 'g-inc'], ['exp', 'Spending', 'g-exp'], ['inv', 'Investing', 'g-inv']];
+s.on('year', y => {
+  sel = {}; $('submit').disabled = true;
+  $('yn').textContent = `Year ${y.year} of ${y.total} · Age ${y.age}`;
+  $('en').textContent = y.event.name + ':'; $('et').textContent = y.event.text;
+  for (const [k, title, id] of GROUPS) {
+    const g = $(id), h = document.createElement('h3'); h.textContent = title;
+    g.replaceChildren(h, ...y.options[k].map(o => { const b = document.createElement('button');
+      b.className = 'opt'; const n = document.createElement('b'), d = document.createElement('small');
+      n.textContent = o.name; d.textContent = o.desc; b.append(n, d);
+      b.onclick = () => { sel[k] = o.id; g.querySelectorAll('.opt').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        $('submit').disabled = !(sel.inc && sel.exp && sel.inv); };
+      return b; }));
+  }
+  show('pick'); window.scrollTo(0, 0);
+});
+$('submit').onclick = () => s.emit('choose', sel);
+s.on('locked', () => show('lock'));
+
+function step() {
+  const t = steps[si];
+  $('rtitle').textContent = t.title; $('rbig').textContent = t.big || '';
+  $('rrows').replaceChildren(...t.rows.map(([l, v]) => { const r = document.createElement('div'); r.className = 'row';
+    const a = document.createElement('span'), b = document.createElement('span'); a.textContent = l; b.textContent = v; r.append(a, b); return r; }));
+  $('rnext').textContent = si === steps.length - 1 ? 'Done' : 'Next';
+}
+s.on('report', r => { steps = r.steps; si = 0; step(); show('rep'); });
+$('rnext').onclick = () => {
+  if (si < steps.length - 1) { si++; step(); }
+  else { $('wmsg').textContent = 'Waiting for the host to start the next year…'; show('wait'); }
+};
+s.on('final', b => {
+  const i = b.findIndex(x => x.name === me), m = b[i];
+  $('rank').textContent = m ? `You placed ${i + 1} of ${b.length}: ${fmt(m.money)} saved, ${m.hap} happiness, score ${fmt(m.score)}.` : '';
+  $('fb').replaceChildren(...b.slice(0, 5).map((r, j) => { const li = document.createElement('li');
+    const a = document.createElement('span'), c = document.createElement('b'); a.textContent = `${j + 1}. ${r.name}`; c.textContent = fmt(r.score); li.append(a, c); return li; }));
+  show('fin');
+});
+s.on('ended', () => { $('err').textContent = 'The host ended the game.'; show('join'); });
+</script></body></html>
